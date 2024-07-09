@@ -1,0 +1,90 @@
+from multiprocessing import Pool
+from bitarray import bitarray
+import numpy as np
+from time import perf_counter as timer
+
+
+class Chrono:
+    def __init__(self):
+        self.bench = [timer()]
+    def mark(self, total=False, precision=3, ):
+        self.bench.append(timer())
+        return f" {self.bench[-1] - self.bench[-2]:.{precision}f} sec.  {"" if not total else f"total: {self.bench[-1] - self.bench[0]:.{precision}f} sec."} "
+
+
+def sieve_antoine(n: int):  # original
+    arr_k = {val: bitarray('1') * (n // modulus + 1) for val in totatives}
+    for nth in range(0, int(n ** 0.5) // (modulus - 1) + 1):
+        for maybee in totatives:
+            if nth == 0 and maybee == 1:    # these
+                continue                             # 3
+            if arr_k[maybee][nth]:             # line will be remove by the production of prime numbers list in parrallele methode
+                step = nth * modulus + maybee
+                for x in totatives:               #  loop remove bcause every process will be this loop
+                    if x < maybee:                # these
+                        x += modulus              # 2 line will be remove by sorted index in table "add" in multycore sieve function
+                    start_index = (step ** 2 + step * (x - maybee)) // modulus      # x * maybee) % modulus will be value in table add
+                    arr_k[(x * maybee) % modulus][start_index::step] = 0b0          # reason why i sort by (x * maybee) % modulus ) and transpose the table  add i want sive by totatives not all
+    for val in totatives:  # for removing over sieved number
+        if arr_k[val][-1]:
+            last_index = (n // modulus) * modulus + val
+            if last_index > n:
+                arr_k[val][-1] = False
+    arr_k[1][0] = False
+    lst = [int(nth) * modulus + val for val in totatives for nth in np.nonzero(np.frombuffer(arr_k[val].unpack(), dtype=np.uint8))[0]]
+    lst.sort()
+    return lst  #  excludes numbers aren't there because they aren't in any totatives will sieve totatives only
+
+
+def sieve_residue_class(size, modulus, master_loop, totatives, add):
+    data = bitarray('1') * size  # bitarray initialisation
+    add = np.r_[add, (modulus - np.flip(add)) % modulus].tolist()  # reconstruct complete table add (dim divided by 2)
+    for nth in range(len(master_loop)):      # nth is the level of modulo
+        for ix in master_loop[nth]:          # sublist (info about if prime, list of index in candidates
+            step = nth * modulus + totatives[ix]   # Convert data into real number
+            data[(step ** 2 + step * add[ix]) // modulus::step] = 0b0
+    return data
+
+
+def generate_splited(limit, is_last, totatives, modulus, start, parts):
+    data = np.concatenate([(np.nonzero(np.frombuffer(parts[_].unpack(), dtype=np.int8))[0] + start) * modulus + totatives[_] for _ in range(len(parts))])
+    data.sort()
+    return data if not is_last else data[data <= limit]
+
+
+if __name__ == "__main__":
+    bench2 = Chrono()
+    limit, exclude, parts = 100000000000, [2, 3, 5, 7, 11], 46  # limit, exclude, here your param exclude must be consecutive primes excludes from memory
+    modulus = int(np.prod(exclude))
+    nb_tot = len(totatives := [i for i in range(1, modulus) if np.gcd(i, modulus) == 1])
+    size = [(limit // modulus + 1) // parts * i for i in range(parts)] + [limit // modulus + 1]
+    j = sieve_antoine(int(limit ** 0.5) + 1)  # primes numbers list up to int(limit ** 0.5) +1
+    master_loop = [[] for _ in range(j[-1] // modulus + 1)]  # format prime list in modulus range
+    [master_loop[i // modulus].append(totatives.index(i % modulus)) for i in j]  # store index of totatives for prime by modulus in sublist
+    add = np.zeros((nb_tot, nb_tot // 2), np.int64)
+    for i in range(nb_tot // 2):    # ho ho it's magic only half because the complete array is a kind of mirror
+        rolled_totatives = np.roll(totatives, -i)   # if totative [y] < totatives[x]
+        sorted_indices = np.argsort(rolled_totatives * totatives[i] % modulus)  # sort from value
+        add[:, i] = ((rolled_totatives[sorted_indices] - totatives[i]) % modulus)  # do math and transpose result in array
+    del rolled_totatives, sorted_indices, sieve_antoine, j
+    print(f"\nLimite: {limit:.4e} Mod {modulus} Residus de classe: {nb_tot}")
+    print(f"initialisation:        {bench2.mark()}")
+    with Pool(processes=12) as pool:
+        results = pool.starmap(sieve_residue_class, [(size[-1], modulus, master_loop, totatives, add[i]) for i in range(nb_tot)])
+        results[0][0] = 0
+        print(f"crible:                  {bench2.mark()}")
+        args = [(limit, i == parts - 1, totatives, modulus, size[i], [results[j][size[i]:size[i + 1]] for j in range(nb_tot)]) for i in range(parts)]
+        results = pool.starmap(generate_splited, args)
+    lst = np.concatenate([np.array(exclude)] + results)
+    print(f"generating primes: {bench2.mark(True)} {lst.size}")
+
+# 2 result on i9 10920x
+# Limite: 1.0000e+10 Mod 2310 Residus de classe: 480
+# initialization:         0.079 sec.   
+# sieve:                   0.811 sec.   
+# generating primes in list:  5.844 sec.  total: 6.733 sec.  455052511
+
+# Limite: 1.0000e+11 Mod 2310 Residus de classe: 480
+# initialisation:         0.115 sec.   
+# crible:                   21.601 sec.   
+# generating primes in list:  60.099 sec.  total: 81.816 sec.  4118054813
