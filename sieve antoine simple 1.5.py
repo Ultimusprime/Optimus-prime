@@ -47,9 +47,9 @@ def sieve_totatives_multicore(limit, div, parts, core):
         sieve = timer()
         args = [(i >= parts - 2, limit, inv, mod_n, offset[i],
                  [results[j][offset[i]:offset[i + 1]] for j in range(euler_totient)]) for i in range(parts)]
-        primes = np.concatenate([np.array(div)] + pool.starmap(generate_splited, args))
+        primes = np.concatenate([np.array(div)] + pool.starmap(generate_splited, args))  # primes is a list of all primes
         print(f"init  :{init - t:.3f}\nSieve :{sieve-init:.3f}\nGen   :{(f := timer())-sieve:.3f}\nTotal :{f - t:.3f}")
-        print(len(primes))
+        print(len(primes)) 
 
 
 if __name__ == "__main__":
