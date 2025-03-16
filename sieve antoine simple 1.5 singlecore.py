@@ -4,7 +4,7 @@ from time import perf_counter as timer
 
 t = timer()
 limit = 100000000
-factors_mod = [2, 3, 5, 7]
+factors_mod = [2, 3, 5, 7]  # must be primes and consecutive  from 2 to 13 more u have less memory it use but the corection array add become much more large over 13 os can handle it
 mod_n = np.prod(factors_mod)
 inv = np.array([i for i in range(1, mod_n) if np.gcd(i, mod_n) == 1], dtype=np.int64)
 euler = inv.size
